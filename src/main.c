@@ -4,7 +4,19 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#include <direct.h>
+#else
+#include <sys/stat.h>
 #endif
+
+// 输出目录不存在就建一层（不让用户先 mkdir）
+static void ensure_dir(const char* d) {
+#ifdef _WIN32
+    _mkdir(d);
+#else
+    mkdir(d, 0755);
+#endif
+}
 
 // =====================================================================
 // 场景：三个任务，复现"优先级反转"
@@ -220,6 +232,8 @@ int main(int argc, char** argv) {
         if (strcmp(argv[i], "--json") == 0) json = 1;
         else if (strcmp(argv[i], "--out") == 0 && i + 1 < argc) outdir = argv[++i];
     }
+
+    ensure_dir(outdir);
 
     snprintf(pa, sizeof(pa), "%s/trace_no_inherit.json", outdir);
     snprintf(pb, sizeof(pb), "%s/trace_inherit.json", outdir);

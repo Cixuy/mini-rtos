@@ -143,16 +143,16 @@ docs/report.html            单文件可视化报告（不需要起服务，双�
 
 ```json
 {
-  "tickMs": 1, "ticks": 217, "switches": 12,
+  "tickMs": 1, "ticks": 217, "switches": 7,
   "tasks":  [{"id":0,"name":"HIGH","prio":1,"basePrio":1,"runTicks":6}, ...],
-  "owner":  [0, 0, 2, 2, 2, ...],            // 每个 tick 谁占着 CPU，画甘特图用
+  "owner":  [1, 2, 2, 2, 2, 1, 1, 0, 1, 1, ...],   // 每个 tick 谁占着 CPU，画甘特图用
   "events": [{"t":8,"task":0,"e":"block","p":-1},
              {"t":8,"task":2,"e":"inherit","p":1},
              {"t":64,"task":2,"e":"restore","p":6}, ...]
 }
 ```
 
-`owner` 数组是刻意拍平的：一次运行一千多个 tick，用数组比用区间对象省事，直接喂给 canvas 就能画。
+`owner` 数组是刻意拍平的：一次运行两百多个 tick，用数组比用区间对象省事，直接喂给 canvas 就能画。开头那几位 `1,2,2,2,2,1,1,0` 对应「id 0 = HIGH / 1 = MED / 2 = LOW」：先由 MED 起头，LOW 拿到锁后被 MED 抢走，第 8 拍 HIGH 才露面。
 
 ## 已知局限
 
