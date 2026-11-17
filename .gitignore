@@ -1,0 +1,17 @@
+# 编译产物
+build/
+*.o
+*.obj
+*.exe
+*.out
+
+# 运行生成的 trace（可随时重跑）
+out/
+
+# 编辑器
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# 注意：docs/ 下的截图和 report.html 是要提交的
