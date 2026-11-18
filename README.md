@@ -117,6 +117,17 @@ out/summary.json            两次运行的指标
 docs/report.html            单文件可视化报告（不需要起服务，双击打开）
 ```
 
+### 确定性自检
+
+```bash
+./build/mini_rtos.exe --out out --repeat 5   # 连跑 5 次，指标不一致就以 1 退出
+make soak                                    # 同上，CI 里可以直接用
+```
+
+这条检查把「同一配置每次跑出来的 tick 数一致」从 README 里的一句话变成可执行断言。
+它挡的是这类回归：如果有人把 `busy()` 改回自己 `nanosleep`，任务节奏与调度 tick 就不同源了，
+指标会开始 ±1 抖动 —— 普通跑一次看不出来，`--repeat` 会立刻报出来并以非 0 退出。
+
 `--json` 只打印一行 JSON，方便接 CI 或脚本对比：
 
 ```bash

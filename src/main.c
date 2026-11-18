@@ -224,13 +224,14 @@ int main(int argc, char** argv) {
     SetConsoleOutputCP(CP_UTF8);
 #endif
     const char* outdir = "out";
-    int json = 0, i;
+    int json = 0, repeat = 1, i;
     char pa[512], pb[512], ps[512];
     result_t a, b;
 
     for (i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--json") == 0) json = 1;
         else if (strcmp(argv[i], "--out") == 0 && i + 1 < argc) outdir = argv[++i];
+        else if (strcmp(argv[i], "--repeat") == 0 && i + 1 < argc) repeat = atoi(argv[++i]);
     }
 
     ensure_dir(outdir);
@@ -261,6 +262,33 @@ int main(int argc, char** argv) {
         return 0;
     }
 
+    int soak_bad = 0;
+    // ---- 自检：同一份配置重复跑 N 次，关键指标必须完全一致 ----
+    // 这条检查把 README 里"连跑 5 次指标一致"的结论变成可执行断言，
+    // 一旦 tick 驱动哪天被改坏（比如又退回 nanosleep），CI 会以非 0 退出。
+    if (repeat > 1) {
+        int bad = 0, k;
+        for (k = 1; k < repeat; ++k) {
+            result_t a2 = run_scenario("场景 A", 0, pa);
+            result_t b2 = run_scenario("场景 B", 1, pb);
+            int ok = (a2.high_blocked == a.high_blocked) &&
+                     (a2.low_cs       == a.low_cs)       &&
+                     (a2.med_during_block == a.med_during_block) &&
+                     (b2.high_blocked == b.high_blocked) &&
+                     (b2.low_cs       == b.low_cs);
+            if (!ok) {
+                ++bad;
+                printf("  第 %d 次不一致：A highBlocked %llu->%llu  lowCs %llu->%llu\n", k + 1,
+                       (unsigned long long)a.high_blocked, (unsigned long long)a2.high_blocked,
+                       (unsigned long long)a.low_cs, (unsigned long long)a2.low_cs);
+            }
+        }
+        printf("\n[自检] 重复 %d 次，%s（A: 阻塞 %llu tick / 临界区 %llu tick）\n",
+               repeat, bad ? "存在不一致，tick 驱动可能被改坏" : "全部一致",
+               (unsigned long long)a.high_blocked, (unsigned long long)a.low_cs);
+        soak_bad = bad;
+    }
+
     print_scene(&a);
     print_scene(&b);
     print_table(&a, &b);
@@ -279,5 +307,5 @@ int main(int argc, char** argv) {
             (unsigned long long)b.high_got, (unsigned long long)b.low_cs, (unsigned long long)b.total);
         fclose(f);
     }
-    return 0;
+    return soak_bad ? 1 : 0;   // 自检不一致时让 make / CI 失败
 }
