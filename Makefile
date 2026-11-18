@@ -35,7 +35,12 @@ run: $(BIN)
 report:
 	$(PY) tools/report.py out docs/report.html
 
+# 确定性自检：连跑 5 次，指标必须完全一致（不一致时 make 直接失败）
+soak: $(BIN)
+	@mkdir -p out
+	./$(BIN) --out out --repeat 5
+
 clean:
 	rm -rf build out
 
-.PHONY: all build run report clean
+.PHONY: all build run report soak clean
