@@ -224,14 +224,27 @@ int main(int argc, char** argv) {
     SetConsoleOutputCP(CP_UTF8);
 #endif
     const char* outdir = "out";
-    int json = 0, repeat = 1, i;
+    int json = 0, repeat = 1, repeat_given = 0, i;
     char pa[512], pb[512], ps[512];
     result_t a, b;
 
     for (i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--json") == 0) json = 1;
         else if (strcmp(argv[i], "--out") == 0 && i + 1 < argc) outdir = argv[++i];
-        else if (strcmp(argv[i], "--repeat") == 0 && i + 1 < argc) repeat = atoi(argv[++i]);
+        else if (strcmp(argv[i], "--repeat") == 0 && i + 1 < argc) {
+            const char* s = argv[i + 1];
+            char* end = NULL;
+            long v = strtol(s, &end, 10);
+            // repeat 0 / 负数 / 非数字都会让自检那段被静默跳过，等于把断言关掉还报成功，
+            // 这里直接拒绝：要关自检就干脆别加 --repeat，别用一个看起来合理的数字
+            if (end == s || *end != '\0' || v < 1 || v > 1000) {
+                fprintf(stderr, "error: --repeat 需要 1..1000 的整数（当前 \"%s\"）\n", s);
+                return 2;
+            }
+            repeat = (int)v;
+            repeat_given = 1;
+            ++i;
+        }
     }
 
     ensure_dir(outdir);
@@ -266,6 +279,9 @@ int main(int argc, char** argv) {
     // ---- 自检：同一份配置重复跑 N 次，关键指标必须完全一致 ----
     // 这条检查把 README 里"连跑 5 次指标一致"的结论变成可执行断言，
     // 一旦 tick 驱动哪天被改坏（比如又退回 nanosleep），CI 会以非 0 退出。
+    if (repeat_given && repeat == 1)
+        printf("\n[自检] 只跑 1 次，没有可比对的对象；要断言一致性请用 --repeat 2 及以上\n");
+
     if (repeat > 1) {
         int bad = 0, k;
         for (k = 1; k < repeat; ++k) {
