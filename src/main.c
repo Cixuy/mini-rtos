@@ -32,6 +32,10 @@ static void ensure_dir(const char* d) {
 // =====================================================================
 
 static sem_t_ M;
+// 场景参数：临界区长度和 MED 的工作量做成可调的，
+// 这样才能验证"反转代价 ≈ MED 工作量"这个结论，而不是只在一个固定数字上自证。
+static int    g_cs_ticks  = 60;
+static int    g_med_ticks = 150;
 static int    g_med_id  = -1;
 static int    g_low_id  = -1;
 static int    g_high_id = -1;
@@ -46,7 +50,7 @@ static void low_task(void* a) {
     int me = self_id();
     sem_wait_(&M, me);
     uint64_t t0 = (uint64_t)rtos_tick_total();
-    busy(60);                                   // 临界区：擦 4KB Flash + 写配置
+    busy((unsigned)g_cs_ticks);                 // 临界区：擦 4KB Flash + 写配置
     g_low_cs = (uint64_t)rtos_tick_total() - t0;
     sem_post_(&M, me);
 }
@@ -54,7 +58,7 @@ static void low_task(void* a) {
 static void med_task(void* a) {
     (void)a;
     sleep_ticks(5);                             // 第 5 个 tick 才"到达"
-    busy(150);                                  // 纯计算，跟锁无关
+    busy((unsigned)g_med_ticks);                // 纯计算，跟锁无关
 }
 
 static void high_task(void* a) {
@@ -205,7 +209,7 @@ static void print_table(const result_t* a, const result_t* b) {
 
     printf("  "); pad_l("LOW 临界区实际耗时 (tick)", 34);
     pad_num(a->low_cs, 9); printf("   ");
-    pad_num(b->low_cs, 9); printf("   代码里只写了 busy(60)\n");
+    pad_num(b->low_cs, 9); printf("   代码里只写了 busy(%d)\n", g_cs_ticks);
 
     printf("  "); pad_l("整场运行总 tick", 34);
     {
@@ -231,6 +235,16 @@ int main(int argc, char** argv) {
     for (i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--json") == 0) json = 1;
         else if (strcmp(argv[i], "--out") == 0 && i + 1 < argc) outdir = argv[++i];
+        else if (strcmp(argv[i], "--cs") == 0 && i + 1 < argc) {
+            long v = atol(argv[++i]);
+            if (v < 1 || v > 100000) { fprintf(stderr, "error: --cs 需要 1..100000 的 tick 数\n"); return 2; }
+            g_cs_ticks = (int)v;
+        }
+        else if (strcmp(argv[i], "--med") == 0 && i + 1 < argc) {
+            long v = atol(argv[++i]);
+            if (v < 1 || v > 100000) { fprintf(stderr, "error: --med 需要 1..100000 的 tick 数\n"); return 2; }
+            g_med_ticks = (int)v;
+        }
         else if (strcmp(argv[i], "--repeat") == 0 && i + 1 < argc) {
             const char* s = argv[i + 1];
             char* end = NULL;
@@ -255,7 +269,8 @@ int main(int argc, char** argv) {
 
     if (!json) {
         printf("mini-rtos - 单核抢占式调度 / 优先级反转复现\n");
-        printf("tick=1ms  LOW(prio6) 临界区 60 tick  MED(prio4) 150 tick  HIGH(prio1) 第 8 tick 到达\n");
+        printf("tick=1ms  LOW(prio6) 临界区 %d tick  MED(prio4) %d tick  HIGH(prio1) 第 8 tick 到达\n",
+               g_cs_ticks, g_med_ticks);
     }
 
     a = run_scenario("场景 A：不开启优先级继承", 0, pa);
