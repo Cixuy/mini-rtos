@@ -233,31 +233,53 @@ int main(int argc, char** argv) {
     result_t a, b;
 
     for (i = 1; i < argc; ++i) {
-        if (strcmp(argv[i], "--json") == 0) json = 1;
-        else if (strcmp(argv[i], "--out") == 0 && i + 1 < argc) outdir = argv[++i];
-        else if (strcmp(argv[i], "--cs") == 0 && i + 1 < argc) {
-            long v = atol(argv[++i]);
-            if (v < 1 || v > 100000) { fprintf(stderr, "error: --cs 需要 1..100000 的 tick 数\n"); return 2; }
-            g_cs_ticks = (int)v;
+        const char* opt = argv[i];
+        int takes_val;
+
+        if (strcmp(opt, "--json") == 0) { json = 1; continue; }
+        if (strcmp(opt, "--help") == 0 || strcmp(opt, "-h") == 0) {
+            printf("用法: mini_rtos [--out DIR] [--cs N] [--med N] [--repeat N] [--json]\n"
+                   "  --out DIR   输出目录（默认 out）\n"
+                   "  --cs N      LOW 临界区 tick 数（1..100000，默认 60）\n"
+                   "  --med N     MED 工作量 tick 数（1..100000，默认 150）\n"
+                   "  --repeat N  自检重复次数（2..1000），不一致则退 1\n"
+                   "  --json      只输出一行 JSON 结果\n");
+            return 0;
         }
-        else if (strcmp(argv[i], "--med") == 0 && i + 1 < argc) {
-            long v = atol(argv[++i]);
-            if (v < 1 || v > 100000) { fprintf(stderr, "error: --med 需要 1..100000 的 tick 数\n"); return 2; }
-            g_med_ticks = (int)v;
+
+        // 选项名写错、或者写了选项却没跟值，以前都会被静默忽略并按默认值跑完，
+        // 退码还是 0 —— CI 里等于什么都没验。这里一律退 2。
+        takes_val = (strcmp(opt, "--out") == 0) || (strcmp(opt, "--cs") == 0) ||
+                    (strcmp(opt, "--med") == 0) || (strcmp(opt, "--repeat") == 0);
+        if (!takes_val) {
+            fprintf(stderr, "error: 未知选项 \"%s\"（--help 看用法）\n", opt);
+            return 2;
         }
-        else if (strcmp(argv[i], "--repeat") == 0 && i + 1 < argc) {
-            const char* s = argv[i + 1];
+        if (i + 1 >= argc) {
+            fprintf(stderr, "error: %s 缺少参数值\n", opt);
+            return 2;
+        }
+
+        if (strcmp(opt, "--out") == 0) { outdir = argv[++i]; continue; }
+
+        {   // 数值选项：整串必须都是数字，`--cs 60x` 这种不再被 atol 悄悄截成 60
+            long v;
             char* end = NULL;
-            long v = strtol(s, &end, 10);
-            // repeat 0 / 负数 / 非数字都会让自检那段被静默跳过，等于把断言关掉还报成功，
-            // 这里直接拒绝：要关自检就干脆别加 --repeat，别用一个看起来合理的数字
-            if (end == s || *end != '\0' || v < 1 || v > 1000) {
-                fprintf(stderr, "error: --repeat 需要 1..1000 的整数（当前 \"%s\"）\n", s);
+            ++i;
+            v = strtol(argv[i], &end, 10);
+            if (end == argv[i] || *end != '\0') {
+                fprintf(stderr, "error: %s 需要一个整数（当前 \"%s\"）\n", opt, argv[i]);
                 return 2;
             }
-            repeat = (int)v;
-            repeat_given = 1;
-            ++i;
+            if (strcmp(opt, "--repeat") == 0) {
+                // repeat 0 / 负数会静默跳过自检还退 0，等于把断言关掉
+                if (v < 1 || v > 1000) { fprintf(stderr, "error: --repeat 需要 1..1000（当前 %ld）\n", v); return 2; }
+                repeat = (int)v;
+                repeat_given = 1;
+            } else {
+                if (v < 1 || v > 100000) { fprintf(stderr, "error: %s 需要 1..100000 的 tick 数（当前 %ld）\n", opt, v); return 2; }
+                if (strcmp(opt, "--cs") == 0) g_cs_ticks = (int)v; else g_med_ticks = (int)v;
+            }
         }
     }
 
