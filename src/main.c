@@ -1,6 +1,7 @@
 #include "rtos.h"
 #include <string.h>
 #include <stdlib.h>
+#include <errno.h>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -10,12 +11,13 @@
 #endif
 
 // 输出目录不存在就建一层（不让用户先 mkdir）
-static void ensure_dir(const char* d) {
+static int ensure_dir(const char* d) {
 #ifdef _WIN32
-    _mkdir(d);
+    int rc = _mkdir(d);
 #else
-    mkdir(d, 0755);
+    int rc = mkdir(d, 0755);
 #endif
+    return rc == 0 || errno == EEXIST;
 }
 
 // =====================================================================
@@ -260,7 +262,12 @@ int main(int argc, char** argv) {
             return 2;
         }
 
-        if (strcmp(opt, "--out") == 0) { outdir = argv[++i]; continue; }
+        if (strcmp(opt, "--out") == 0) {
+            ++i;
+            if (!argv[i][0]) { fprintf(stderr, "error: --out 需要一个非空目录名\n"); return 2; }
+            outdir = argv[i];
+            continue;
+        }
 
         {   // 数值选项：整串必须都是数字，`--cs 60x` 这种不再被 atol 悄悄截成 60
             long v;
@@ -283,7 +290,12 @@ int main(int argc, char** argv) {
         }
     }
 
-    ensure_dir(outdir);
+    // 目录建不出来（盘符不存在、无写权限、路径过长）就别再往下跑：
+    // 以前 fopen 静默失败，照样打印"trace 已写入"，退码 0。
+    if (!ensure_dir(outdir)) {
+        fprintf(stderr, "error: 无法创建输出目录 \"%s\"\n", outdir);
+        return 2;
+    }
 
     snprintf(pa, sizeof(pa), "%s/trace_no_inherit.json", outdir);
     snprintf(pb, sizeof(pb), "%s/trace_inherit.json", outdir);
@@ -297,20 +309,6 @@ int main(int argc, char** argv) {
 
     a = run_scenario("场景 A：不开启优先级继承", 0, pa);
     b = run_scenario("场景 B：开启优先级继承",   1, pb);
-
-    if (json) {
-        printf("{\"no_inherit\":{\"highBlocked\":%llu,\"lowCs\":%llu,\"medDuringBlock\":%llu,"
-               "\"highGot\":%llu,\"total\":%llu},"
-               "\"inherit\":{\"highBlocked\":%llu,\"lowCs\":%llu,\"medDuringBlock\":%llu,"
-               "\"highGot\":%llu,\"total\":%llu}}\n",
-               (unsigned long long)a.high_blocked, (unsigned long long)a.low_cs,
-               (unsigned long long)a.med_during_block, (unsigned long long)a.high_got,
-               (unsigned long long)a.total,
-               (unsigned long long)b.high_blocked, (unsigned long long)b.low_cs,
-               (unsigned long long)b.med_during_block, (unsigned long long)b.high_got,
-               (unsigned long long)b.total);
-        return 0;
-    }
 
     int soak_bad = 0;
     // ---- 自检：同一份配置重复跑 N 次，关键指标必须完全一致 ----
@@ -342,10 +340,24 @@ int main(int argc, char** argv) {
         soak_bad = bad;
     }
 
-    print_scene(&a);
-    print_scene(&b);
-    print_table(&a, &b);
-    printf("  trace 已写入 %s / trace_inherit.json / summary.json\n", outdir);
+    if (json) {
+        // 自检写在 JSON 字段里而不是 stderr，机器人只解析 stdout 也能看到不一致
+        printf("{\"no_inherit\":{\"highBlocked\":%llu,\"lowCs\":%llu,\"medDuringBlock\":%llu,"
+               "\"highGot\":%llu,\"total\":%llu},"
+               "\"inherit\":{\"highBlocked\":%llu,\"lowCs\":%llu,\"medDuringBlock\":%llu,"
+               "\"highGot\":%llu,\"total\":%llu},\"repeat\":%d,\"soakBad\":%d}\n",
+               (unsigned long long)a.high_blocked, (unsigned long long)a.low_cs,
+               (unsigned long long)a.med_during_block, (unsigned long long)a.high_got,
+               (unsigned long long)a.total,
+               (unsigned long long)b.high_blocked, (unsigned long long)b.low_cs,
+               (unsigned long long)b.med_during_block, (unsigned long long)b.high_got,
+               (unsigned long long)b.total, repeat > 1 ? repeat : 0, soak_bad);
+    } else {
+        print_scene(&a);
+        print_scene(&b);
+        print_table(&a, &b);
+        printf("  trace 已写入 %s / trace_inherit.json / summary.json\n", outdir);
+    }
 
     FILE* f = fopen(ps, "w");
     if (f) {

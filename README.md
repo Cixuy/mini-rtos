@@ -140,8 +140,13 @@ make soak                                    # 同上，CI 里可以直接用
 
 ```bash
 ./build/mini_rtos.exe --json
-# {"no_inherit":{"highBlocked":205,...,"medDuringBlock":148},"inherit":{"highBlocked":57,...,"medDuringBlock":0}}
+# {"no_inherit":{"highBlocked":205,...,"medDuringBlock":148},"inherit":{"highBlocked":57,...,"medDuringBlock":0},"repeat":0,"soakBad":0}
 ```
+
+`--json` 与 `--repeat` 可以叠加，再用 jq 断言即可：`--json --repeat 5` 照常做 5 次一致性
+比对，结果写进 `soakBad`（0=一致，>0=不一致次数），不一致时仍退 1；`repeat` 字段是实际
+比对次数，没给 `--repeat` 时为 0。以前 `--json` 会直接 `return 0`，自检整段被跳过。
+`--out` 目录建不出来（盘符不存在/无权限）现在报错退 2，以前 fopen 静默失败还打印"trace 已写入"。
 
 ## 参数化验证：反转代价到底由什么决定
 
